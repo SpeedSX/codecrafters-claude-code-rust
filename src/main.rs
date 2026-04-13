@@ -68,11 +68,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let tool_calls = &response["choices"][0]["message"]["tool_calls"];
         if tool_calls.is_array() {
             if tool_calls[0]["type"] == "function" && tool_calls[0]["function"]["name"] == "Read" {
-                if let Some(file_path) = json!(&tool_calls[0]["function"]["arguments"])["file_path"].as_str() {
+                let args: serde_json::Value = serde_json::from_str(tool_calls[0]["function"]["arguments"].as_str().unwrap_or("{}"))?;
+                if let Some(file_path) = args["file_path"].as_str() {
                     let mut file = File::open(file_path)?;
                     let mut contents = String::new();
                     file.read_to_string(&mut contents)?;
-                    
+
                     println!("{contents}");
                 } else {
                     eprintln!("file_path argument is missing or not a string");
