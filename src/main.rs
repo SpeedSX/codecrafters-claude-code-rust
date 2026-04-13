@@ -63,15 +63,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         if let Some(tool_responses) = execute_tool_calls(&response) {
             // If a tool call was executed, we need to send the tool response back to the model
             for tool_response in tool_responses {
-                   messages.as_array_mut().unwrap().push(tool_response);
+                messages.as_array_mut().unwrap().push(tool_response);
             }
-        } else if let Some(content) = response["choices"][0]["message"]["content"].as_str() {
-            println!("{content}");
-        } else {
-            eprintln!("No content in response: {response}");
-        }
 
-        break;
+            let assistant_message = response["choices"][0]["message"].clone();
+            messages.as_array_mut().unwrap().push(assistant_message);
+        } else {
+            if let Some(content) = response["choices"][0]["message"]["content"].as_str() {
+                println!("{content}");
+            } else {
+                eprintln!("No content in response: {response}");
+            }
+            break;
+        }
     }
 
     Ok(())
