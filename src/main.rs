@@ -61,13 +61,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let response: Value = client.chat().create_byot(&request).await?;
 
         if let Some(tool_responses) = execute_tool_calls(&response) {
+            let assistant_message = response["choices"][0]["message"].clone();
+            messages.as_array_mut().unwrap().push(assistant_message);
+            
             // If a tool call was executed, we need to send the tool response back to the model
             for tool_response in tool_responses {
                 messages.as_array_mut().unwrap().push(tool_response);
             }
-
-            let assistant_message = response["choices"][0]["message"].clone();
-            messages.as_array_mut().unwrap().push(assistant_message);
         } else {
             if let Some(content) = response["choices"][0]["message"]["content"].as_str() {
                 println!("{content}");
