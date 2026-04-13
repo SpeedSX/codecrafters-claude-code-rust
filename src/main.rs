@@ -1,7 +1,7 @@
 use async_openai::{Client, config::OpenAIConfig};
 use clap::Parser;
 use serde_json::{Value, json};
-use std::{env, process};
+use std::{env, fs::File, io::Read, process};
 
 #[derive(Parser)]
 #[command(author, version, about)]
@@ -64,6 +64,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if let Some(content) = response["choices"][0]["message"]["content"].as_str() {
         println!("{}", content);
+    } else {
+        let tool_calls = &response["choices"][0]["message"]["tool_calls"];
+        if tool_calls.is_array() {
+            if tool_calls[0]["type"] == "function" && tool_calls[0]["function"]["name"] == "Read" {
+                if let Some(file_path) = json!(&tool_calls[0]["function"]["arguments"])["file_path"].as_str() {
+                    let mut file = File::open(file_path)?;
+                    let mut contents = String::new();
+                    file.read_to_string(&mut contents)?;
+                    
+                    println!("{contents}");
+                } else {
+                    eprintln!("file_path argument is missing or not a string");
+                }
+            } else {
+                eprintln!("Unexpected tool call: {}", tool_calls[0]);
+            }
+        }
     }
 
     Ok(())
