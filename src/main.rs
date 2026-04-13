@@ -28,16 +28,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let client = Client::with_config(config);
 
-    #[allow(unused_variables)]
-    let response: Value = client
-        .chat()
-        .create_byot(json!({
-            "messages": [
-                {
-                    "role": "user",
-                    "content": args.prompt
-                }
-            ],
+    let user_message = json!({
+        "role": "user",
+        "content": args.prompt
+    });
+
+    let mut messages = json!([user_message]);
+
+    loop {
+        let request = json!({
+            "messages": messages,
             "model": "anthropic/claude-haiku-4.5",
             "tools": [{
                 "type": "function",
@@ -56,33 +56,83 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             }]
-        }))
-        .await?;
+        });
 
-    // You can use print statements as follows for debugging, they'll be visible when running tests.
-    eprintln!("Logs from your program will appear here!");
+        let response: Value = client.chat().create_byot(&request).await?;
 
-    if let Some(content) = response["choices"][0]["message"]["content"].as_str() {
-        println!("{}", content);
-    } else {
-        let tool_calls = &response["choices"][0]["message"]["tool_calls"];
-        if tool_calls.is_array() {
-            if tool_calls[0]["type"] == "function" && tool_calls[0]["function"]["name"] == "Read" {
-                let args: serde_json::Value = serde_json::from_str(tool_calls[0]["function"]["arguments"].as_str().unwrap_or("{}"))?;
-                if let Some(file_path) = args["file_path"].as_str() {
-                    let mut file = File::open(file_path)?;
-                    let mut contents = String::new();
-                    file.read_to_string(&mut contents)?;
-
-                    println!("{contents}");
-                } else {
-                    eprintln!("file_path argument is missing or not a string");
-                }
-            } else {
-                eprintln!("Unexpected tool call: {}", tool_calls[0]);
+        if let Some(tool_responses) = execute_tool_calls(&response) {
+            // If a tool call was executed, we need to send the tool response back to the model
+            for tool_response in tool_responses {
+                let tool_response = json!({
+                    "role": "tool",
+                    "content": tool_response
+                });
+                messages.as_array_mut().unwrap().push(tool_response);
             }
+        } else if let Some(content) = response["choices"][0]["message"]["content"].as_str() {
+            println!("{content}");
+        } else {
+            eprintln!("No content in response: {response}");
         }
+
+        break;
     }
 
     Ok(())
+}
+
+fn execute_tool_calls(response: &Value) -> Option<Vec<String>> {
+    let tool_calls = &response["choices"][0]["message"]["tool_calls"];
+    if let Some(tool_calls) = tool_calls.as_array() {
+        let mut results = Vec::new();
+        for call in tool_calls {
+            if call["type"] == "function" {
+                if let Some(result) = execute_function_call(&call["function"]) {
+                    results.push(result);
+                } else {
+                    eprintln!("Function call failed: {}", call);
+                }
+            } else {
+                eprintln!("Unexpected tool call: {}", call);
+            }
+        }
+
+        return Some(results);
+    }
+
+    None
+}
+
+fn execute_function_call(function: &Value) -> Option<String> {
+    let function_name = function["name"].as_str().unwrap_or_default();
+    let args = function["arguments"].as_str().unwrap_or("{}");
+    let args: serde_json::Value = serde_json::from_str(args).unwrap_or_else(|_| {
+        eprintln!("Failed to parse function arguments");
+        json!({})
+    });
+
+    match function_name {
+        "Read" => {
+            if let Some(file_path) = args["file_path"].as_str() {
+                return read_file(file_path)
+                    .map_err(|e| {
+                        eprintln!("Failed to read file: {e}");
+                        e
+                    })
+                    .ok();
+            } else {
+                eprintln!("file_path argument is missing or not a string");
+            }
+        }
+        _ => eprintln!("Unknown function: {function_name}"),
+    }
+
+    None
+}
+
+fn read_file(file_path: &str) -> Result<String, std::io::Error> {
+    let mut file = File::open(file_path)?;
+    let mut contents = String::new();
+    file.read_to_string(&mut contents)?;
+    Ok(contents)
 }
