@@ -59,17 +59,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         });
 
         let response: Value = client.chat().create_byot(&request).await?;
+        let assistant_message = &response["choices"][0]["message"];
 
-        if let Some(tool_responses) = execute_tool_calls(&response) {
-            let assistant_message = response["choices"][0]["message"].clone();
-            messages.as_array_mut().unwrap().push(assistant_message);
-            
+        if let Some(tool_responses) = execute_tool_calls(assistant_message) {
+            messages.as_array_mut().unwrap().push(assistant_message.clone());
+
             // If a tool call was executed, we need to send the tool response back to the model
             for tool_response in tool_responses {
                 messages.as_array_mut().unwrap().push(tool_response);
             }
         } else {
-            if let Some(content) = response["choices"][0]["message"]["content"].as_str() {
+            if let Some(content) = assistant_message["content"].as_str() {
                 println!("{content}");
             } else {
                 eprintln!("No content in response: {response}");
@@ -81,8 +81,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn execute_tool_calls(response: &Value) -> Option<Vec<Value>> {
-    let tool_calls = &response["choices"][0]["message"]["tool_calls"];
+fn execute_tool_calls(message: &Value) -> Option<Vec<Value>> {
+    let tool_calls = &message["tool_calls"];
+
     if let Some(tool_calls) = tool_calls.as_array() {
         let mut results = Vec::new();
         for call in tool_calls {
@@ -128,7 +129,24 @@ fn execute_function_call(function: &Value) -> Option<String> {
             } else {
                 eprintln!("file_path argument is missing or not a string");
             }
-        }
+        },
+        "Write" => {
+            if let Some(file_path) = args["file_path"].as_str() {
+                if let Some(content) = args["content"].as_str() {
+                    return std::fs::write(file_path, content)
+                        .map_err(|e| {
+                            eprintln!("Failed to write file: {e}");
+                            e
+                        })
+                        .ok()
+                        .map(|_| content.to_string());
+                } else {
+                    eprintln!("content argument is missing or not a string");
+                }
+            } else {
+                eprintln!("file_path argument is missing or not a string");
+            }
+        },
         _ => eprintln!("Unknown function: {function_name}"),
     }
 
