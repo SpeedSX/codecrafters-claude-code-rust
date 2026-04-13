@@ -55,7 +55,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         "required": ["file_path"]
                     }
                 }
-            },{
+            },
+            {
                 "type": "function",
                 "function": {
                     "name": "Write",
@@ -73,6 +74,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                         },
                         "required": ["file_path", "content"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "Bash",
+                    "description": "Execute a shell command",
+                    "parameters": {
+                        "type": "object",
+                        "required": ["command"],
+                        "properties": {
+                            "command": {
+                                "type": "string",
+                                "description": "The command to execute"
+                            }
+                        }
                     }
                 }
             }]
@@ -165,6 +183,32 @@ fn execute_function_call(function: &Value) -> Option<String> {
                 }
             } else {
                 eprintln!("file_path argument is missing or not a string");
+            }
+        },
+        "Bash" => {
+            if let Some(command) = args["command"].as_str() {
+                return std::process::Command::new("sh")
+                    .arg("-c")
+                    .arg(command)
+                    .output()
+                    .map_err(|e| {
+                        eprintln!("Failed to execute command: {e}");
+                        e
+                    })
+                    .ok()
+                    .and_then(|output| {
+                        if output.status.success() {
+                            String::from_utf8(output.stdout).map_err(|e| {
+                                eprintln!("Failed to parse command output: {e}");
+                                e
+                            }).ok()
+                        } else {
+                            eprintln!("Command failed with status: {}", output.status);
+                            None
+                        }
+                    });
+            } else {
+                eprintln!("command argument is missing or not a string");
             }
         },
         _ => eprintln!("Unknown function: {function_name}"),
