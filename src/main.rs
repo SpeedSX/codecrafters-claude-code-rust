@@ -55,6 +55,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         "required": ["file_path"]
                     }
                 }
+            },{
+                "type": "function",
+                "function": {
+                    "name": "Write",
+                    "description": "Write content to a file",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "file_path": {
+                                "type": "string",
+                                "description": "The path to the file to write"
+                            },
+                            "content": {
+                                "type": "string",
+                                "description": "The content to write to the file"
+                            }
+                        },
+                        "required": ["file_path", "content"]
+                    }
+                }
             }]
         });
 
