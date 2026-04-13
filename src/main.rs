@@ -63,11 +63,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         if let Some(tool_responses) = execute_tool_calls(&response) {
             // If a tool call was executed, we need to send the tool response back to the model
             for tool_response in tool_responses {
-                let tool_response = json!({
-                    "role": "tool",
-                    "content": tool_response
-                });
-                messages.as_array_mut().unwrap().push(tool_response);
+                   messages.as_array_mut().unwrap().push(tool_response);
             }
         } else if let Some(content) = response["choices"][0]["message"]["content"].as_str() {
             println!("{content}");
@@ -81,14 +77,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn execute_tool_calls(response: &Value) -> Option<Vec<String>> {
+fn execute_tool_calls(response: &Value) -> Option<Vec<Value>> {
     let tool_calls = &response["choices"][0]["message"]["tool_calls"];
     if let Some(tool_calls) = tool_calls.as_array() {
         let mut results = Vec::new();
         for call in tool_calls {
             if call["type"] == "function" {
                 if let Some(result) = execute_function_call(&call["function"]) {
-                    results.push(result);
+                    let function_response = json!({
+                        "role": "tool",
+                        "tool_call_id": call["id"].as_str().unwrap_or_default(),
+                        "content": result
+                    });
+                    results.push(function_response);
                 } else {
                     eprintln!("Function call failed: {}", call);
                 }
