@@ -100,7 +100,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let assistant_message = &response["choices"][0]["message"];
 
         if let Some(tool_responses) = execute_tool_calls(assistant_message) {
-            messages.as_array_mut().unwrap().push(assistant_message.clone());
+            messages
+                .as_array_mut()
+                .unwrap()
+                .push(assistant_message.clone());
 
             // If a tool call was executed, we need to send the tool response back to the model
             for tool_response in tool_responses {
@@ -156,65 +159,69 @@ fn execute_function_call(function: &Value) -> Option<String> {
     });
 
     match function_name {
-        "Read" => {
-            if let Some(file_path) = args["file_path"].as_str() {
-                return read_file(file_path)
-                    .map_err(|e| {
-                        eprintln!("Failed to read file: {e}");
-                        e
-                    })
-                    .ok();
-            } else {
-                eprintln!("file_path argument is missing or not a string");
-            }
-        },
-        "Write" => {
-            if let Some(file_path) = args["file_path"].as_str() {
-                if let Some(content) = args["content"].as_str() {
-                    return std::fs::write(file_path, content)
-                        .map_err(|e| {
-                            eprintln!("Failed to write file: {e}");
-                            e
-                        })
-                        .ok()
-                        .map(|_| content.to_string());
-                } else {
-                    eprintln!("content argument is missing or not a string");
-                }
-            } else {
-                eprintln!("file_path argument is missing or not a string");
-            }
-        },
-        "Bash" => {
-            if let Some(command) = args["command"].as_str() {
-                return std::process::Command::new("sh")
-                    .arg("-c")
-                    .arg(command)
-                    .output()
-                    .map_err(|e| {
-                        eprintln!("Failed to execute command: {e}");
-                        e
-                    })
-                    .ok()
-                    .and_then(|output| {
-                        if output.status.success() {
-                            String::from_utf8(output.stdout).map_err(|e| {
-                                eprintln!("Failed to parse command output: {e}");
-                                e
-                            }).ok()
-                        } else {
-                            eprintln!("Command failed with status: {}", output.status);
-                            None
-                        }
-                    });
-            } else {
-                eprintln!("command argument is missing or not a string");
-            }
-        },
-        _ => eprintln!("Unknown function: {function_name}"),
+        "Read" => read_function(args),
+        "Write" => write_function(args),
+        "Bash" => shell_function(args),
+        _ => {
+            eprintln!("Unknown function: {function_name}");
+            None
+        }
     }
+}
 
-    None
+fn read_function(args: Value) -> Option<String> {
+    if let Some(file_path) = args["file_path"].as_str() {
+        match read_file(file_path) {
+            Ok(contents) => Some(contents),
+            Err(e) => {
+                eprintln!("Failed to read file: {e}");
+                None
+            }
+        }
+    } else {
+        eprintln!("file_path argument is missing or not a string");
+        None
+    }
+}
+
+fn write_function(args: Value) -> Option<String> {
+    let file_path = args["file_path"].as_str().unwrap_or_default();
+    let content = args["content"].as_str().unwrap_or_default();
+
+    match std::fs::write(file_path, content) {
+        Ok(_) => Some(format!("Successfully wrote to {file_path}")),
+        Err(e) => {
+            eprintln!("Failed to write to file: {e}");
+            None
+        }
+    }
+}
+
+fn shell_function(args: Value) -> Option<String> {
+    let command = args["command"].as_str().unwrap_or_default();
+
+    match std::process::Command::new("sh")
+        .arg("-c")
+        .arg(command)
+        .output()
+    {
+        Ok(output) => {
+            if output.status.success() {
+                Some(String::from_utf8_lossy(&output.stdout).to_string())
+            } else {
+                eprintln!(
+                    "Command failed with status {}: {}",
+                    output.status,
+                    String::from_utf8_lossy(&output.stderr)
+                );
+                None
+            }
+        }
+        Err(e) => {
+            eprintln!("Failed to execute command: {e}");
+            None
+        }
+    }
 }
 
 fn read_file(file_path: &str) -> Result<String, std::io::Error> {
